@@ -5,7 +5,7 @@ import {getFullPath}  from './config/constants';
 
 // 私有路由组件
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
-  const token = localStorage.getItem('token')
+  const token = sessionStorage.getItem('token')
   
   return token ? (
     <>{children}</>

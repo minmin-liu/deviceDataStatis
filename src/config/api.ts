@@ -8,7 +8,7 @@ import { getFullPath } from './constants';
 const DEV_API_BASE_URL = '/api'; // 使用Vite代理转发到开发后端
 
 // 生产环境后端API地址 - 真实的生产服务器地址
-const PROD_API_BASE_URL = 'https://manager.yvrdream.com';
+const PROD_API_BASE_URL = 'https://apitest.yvrdream.com';
 
 // 根据当前环境选择对应的API基础地址
 const API_BASE_URL = (import.meta as any).env?.DEV
@@ -23,7 +23,7 @@ export const setupAxiosInterceptors = () => {
   // 请求拦截器：为所有请求自动注入token
   axios.interceptors.request.use(
     (config) => {
-      const token = localStorage.getItem('token') || '';
+      const token = sessionStorage.getItem('token') || '';
       // 确保headers存在
       config.headers = config.headers || {};
       // 后端要求使用自定义header字段 token
@@ -37,12 +37,12 @@ export const setupAxiosInterceptors = () => {
   axios.interceptors.response.use(
     (response) => {
       // 处理响应数据
-      const { errCode, code } = response.data || {};
+      const { errCode} = response.data || {};
       
       // 特殊处理：errCode=10021表示token过期，需要清除token并跳转到登录页面
-      if (errCode === 10021 || code === 10021) {
+      if (errCode === 10021 || errCode === 10020) {
         console.error('Token已过期，需要重新登录');
-        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
         message.error('登录已过期，请重新登录');
         // 使用window.location.href跳转，避免在非React组件中使用useNavigate
         window.location.href = getFullPath('login');
@@ -54,13 +54,11 @@ export const setupAxiosInterceptors = () => {
       return response;
     },
     (error) => {
-      // 处理响应错误：兜底捕获401/403或后端以错误响应返回的过期码
-      const status = error?.response?.status;
       const data = error?.response?.data || {};
-      const expired = data?.errCode === 10021 || data?.code === 10021 || status === 401 || status === 403;
+      const expired = data?.errCode === 10021 || data?.errCode === 10020;
       if (expired) {
         console.error('鉴权失效，重定向至登录');
-        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
         message.error('登录已过期，请重新登录');
         window.location.href = getFullPath('login');
       }
@@ -83,7 +81,7 @@ export const API = {
 
 // 导出axios配置函数，方便统一处理请求头、错误处理等
 export const getAxiosConfig = () => {
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
   return {
     headers: {
       'token': token || '', // 使用token字段而不是Authorization Bearer
@@ -94,7 +92,7 @@ export const getAxiosConfig = () => {
 
 // 导出文件上传的配置函数，设置token和model字段，Content-Type由浏览器自动设置（包含正确的boundary）
 export const getUploadConfig = (model: string) => {
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
   return {
     headers: {
       'token': token || '', // 确保在上传文件时也传入token字段

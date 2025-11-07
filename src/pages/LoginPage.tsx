@@ -49,8 +49,8 @@ const LoginPage: React.FC = () => {
         // 业务逻辑成功，从data对象中获取token并保存
         const token = data?.token;
         console.log('登录接口返回的token值:', token);
-        localStorage.setItem('token', token);
-        console.log('token已保存到localStorage，验证保存结果:', localStorage.getItem('token'));
+        sessionStorage.setItem('token', token);
+        console.log('token已保存到sessionStorage，验证保存结果:', sessionStorage.getItem('token'));
         message.success('登录成功');
         navigate(getFullPath('manage'));
       } else {
