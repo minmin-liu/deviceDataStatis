@@ -28,6 +28,8 @@ interface ApiResponse {
   };
 }
 
+const DEVICE_MODEL_OPTIONS = ['PFDM MR', 'YVR 2'];
+
 const DeviceStatsPage: React.FC = () => {
   const [activeStats, setActiveStats] = useState<ApiStatData[]>([]);
   const [totalStats, setTotalStats] = useState<ApiStatData[]>([]);
@@ -38,6 +40,8 @@ const DeviceStatsPage: React.FC = () => {
   const [activeType, setActiveType] = useState<number>(1); // 活跃设备统计周期
   const [totalPoint, setTotalPoint] = useState<number>(0); // 累计设备数据类型
   const [totalType, setTotalType] = useState<number>(1); // 累计设备统计周期
+  const [activeModel, setActiveModel] = useState<string>('PFDM MR');
+  const [totalModel, setTotalModel] = useState<string>('PFDM MR');
   const navigate = useNavigate();
 
   // 获取设备活跃度数据
@@ -45,7 +49,7 @@ const DeviceStatsPage: React.FC = () => {
     setActiveLoading(true);
     try {
       const activeParams = {
-        model: 'PFDM MR',
+        model: activeModel,
         point: activePoint,
         type: activeType
       };
@@ -66,14 +70,14 @@ const DeviceStatsPage: React.FC = () => {
     } finally {
       setActiveLoading(false);
     }
-  }, [activePoint, activeType]);
+  }, [activePoint, activeType, activeModel]);
 
   // 获取设备累计激活量数据
   const fetchTotalData = useCallback(async () => {
     setTotalLoading(true);
     try {
       const totalParams = {
-        model: 'PFDM MR',
+        model: totalModel,
         point: totalPoint,
         type: totalType
       };
@@ -94,91 +98,16 @@ const DeviceStatsPage: React.FC = () => {
     } finally {
       setTotalLoading(false);
     }
-  }, [totalPoint, totalType]);
+  }, [totalPoint, totalType, totalModel]);
 
-  // 使用一个单独的useEffect来处理初始数据加载
+  // 按当前筛选条件获取数据
   useEffect(() => {
-    let isMounted = true;
-    
-    const fetchInitialData = async () => {
-      if (!isMounted) return;
-      
-      // 初始加载时同时设置两个loading状态
-      if (isMounted) {
-        setActiveLoading(true);
-        setTotalLoading(true);
-      }
-      
-      try {
-        // 并行请求两个接口
-        const [activeResponse, totalResponse] = await Promise.all([
-          axios.post<ApiResponse>(API.DEVICE_ACTIVITY, {
-            model: 'PFDM MR',
-            point: 0,
-            type: 1
-          }, getAxiosConfig()),
-          axios.post<ApiResponse>(API.DEVICE_TOTAL, {
-            model: 'PFDM MR',
-            point: 0,
-            type: 1
-          }, getAxiosConfig())
-        ]);
-        
-        if (!isMounted) return;
-        
-        // 处理响应数据
-        if (activeResponse.data.errCode === 0 && activeResponse.data.data?.atvs) {
-          setActiveStats(activeResponse.data.data.atvs);
-        }
-        
-        if (totalResponse.data.errCode === 0 && totalResponse.data.data?.atvs) {
-          setTotalStats(totalResponse.data.data.atvs);
-        }
-      } catch (error) {
-        console.error('获取初始数据失败:', error);
-        if (isMounted) {
-          message.error('获取数据失败，请稍后重试');
-        }
-      } finally {
-        if (isMounted) {
-          setActiveLoading(false);
-          setTotalLoading(false);
-        }
-      }
-    };
-    
-    fetchInitialData();
-    
-    return () => {
-      isMounted = false;
-    };
-  }, []); // 空依赖数组确保只执行一次
-  
-  // 定义ref在组件顶层，用于标记初始渲染
-  const isFirstRenderActive = React.useRef(true);
-  const isFirstRenderTotal = React.useRef(true);
-  
-  // 设备活跃度筛选条件变化时自动获取数据（排除初始加载）
-  useEffect(() => {
-    if (isFirstRenderActive.current) {
-      // 第一次渲染时不执行，只在后续变更时执行
-      isFirstRenderActive.current = false;
-      return;
-    }
-    
     fetchActiveData();
-  }, [activePoint, activeType, fetchActiveData]);
+  }, [fetchActiveData]);
   
-  // 设备累计激活筛选条件变化时自动获取数据（排除初始加载）
   useEffect(() => {
-    if (isFirstRenderTotal.current) {
-      // 第一次渲染时不执行，只在后续变更时执行
-      isFirstRenderTotal.current = false;
-      return;
-    }
-    
     fetchTotalData();
-  }, [totalPoint, totalType, fetchTotalData]);
+  }, [fetchTotalData]);
   
   // 手动刷新设备活跃度数据
   const handleActiveRefresh = () => {
@@ -192,7 +121,7 @@ const DeviceStatsPage: React.FC = () => {
 
   // 退出登录
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     navigate(getFullPath('login'));
     message.success('已退出登录');
   };
@@ -220,9 +149,23 @@ const DeviceStatsPage: React.FC = () => {
           <Card className="stats-card" title="设备累计激活量统计">
             <div className="chart-filter-controls">
               <div className="filter-item">
+                <Text strong>设备类型：</Text>
+                <Select
+                  value={totalModel}
+                  style={{ width: 160, marginLeft: 10 }}
+                  onChange={(value) => setTotalModel(value)}
+                >
+                  {DEVICE_MODEL_OPTIONS.map((option) => (
+                    <Option key={option} value={option}>
+                      {option}
+                    </Option>
+                  ))}
+                </Select>
+              </div>
+              <div className="filter-item">
                 <Text strong>数据类型：</Text>
                 <Select 
-                  defaultValue={0} 
+                  value={totalPoint}
                   style={{ width: 120, marginLeft: 10 }}
                   onChange={(value) => setTotalPoint(value)}
                 >
@@ -235,7 +178,7 @@ const DeviceStatsPage: React.FC = () => {
               <div className="filter-item">
                 <Text strong>统计周期：</Text>
                 <Select 
-                  defaultValue={1} 
+                  value={totalType}
                   style={{ width: 120, marginLeft: 10 }}
                   onChange={(value) => setTotalType(value)}
                 >
@@ -287,9 +230,23 @@ const DeviceStatsPage: React.FC = () => {
           <Card className="stats-card" title="设备活跃度统计">
             <div className="chart-filter-controls">
               <div className="filter-item">
+                <Text strong>设备类型：</Text>
+                <Select
+                  value={activeModel}
+                  style={{ width: 160, marginLeft: 10 }}
+                  onChange={(value) => setActiveModel(value)}
+                >
+                  {DEVICE_MODEL_OPTIONS.map((option) => (
+                    <Option key={option} value={option}>
+                      {option}
+                    </Option>
+                  ))}
+                </Select>
+              </div>
+              <div className="filter-item">
                 <Text strong>数据类型：</Text>
                 <Select 
-                  defaultValue={0} 
+                  value={activePoint}
                   style={{ width: 120, marginLeft: 10 }}
                   onChange={(value) => setActivePoint(value)}
                 >
@@ -301,7 +258,7 @@ const DeviceStatsPage: React.FC = () => {
               <div className="filter-item">
                 <Text strong>统计周期：</Text>
                 <Select 
-                  defaultValue={1} 
+                  value={activeType}
                   style={{ width: 120, marginLeft: 10 }}
                   onChange={(value) => setActiveType(value)}
                 >
