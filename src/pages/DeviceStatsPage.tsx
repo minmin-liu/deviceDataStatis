@@ -28,7 +28,7 @@ interface ApiResponse {
   };
 }
 
-const DEVICE_MODEL_OPTIONS = ['PFDM MR', 'YVR 2'];
+const DEVICE_MODEL_OPTIONS = ['PFDM MR', 'YVR 2', 'YVR 1'];
 
 const DeviceStatsPage: React.FC = () => {
   const [activeStats, setActiveStats] = useState<ApiStatData[]>([]);
