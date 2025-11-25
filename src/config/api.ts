@@ -8,7 +8,7 @@ import { getFullPath } from './constants';
 const DEV_API_BASE_URL = '/api'; // 使用Vite代理转发到开发后端
 
 // 生产环境后端API地址 - 真实的生产服务器地址
-const PROD_API_BASE_URL = 'https://apitest.yvrdream.com';
+const PROD_API_BASE_URL = 'https://manager.yvrdream.com';
 
 // 根据当前环境选择对应的API基础地址
 const API_BASE_URL = (import.meta as any).env?.DEV
@@ -76,7 +76,11 @@ export const API = {
   // 设备活跃度统计接口
   DEVICE_ACTIVITY: `${API_BASE_URL}/vrmcsys/datacenter/getDeviceDistributiveAtv`,
   // 设备累计激活量统计接口
-  DEVICE_TOTAL: `${API_BASE_URL}/vrmcsys/datacenter/getDeviceCumulativeAtv`
+  DEVICE_TOTAL: `${API_BASE_URL}/vrmcsys/datacenter/getDeviceCumulativeAtv`,
+  // 设备使用时长统计接口
+  DEVICE_DURATION: `${API_BASE_URL}/vrmcsys/datacenter/getDeviceCumulativeDur`,
+  // 设备平均使用时长统计接口
+  DEVICE_DURATION_AVG: `${API_BASE_URL}/vrmcsys/datacenter/getDeviceAverageDur`
 };
 
 // 导出axios配置函数，方便统一处理请求头、错误处理等
