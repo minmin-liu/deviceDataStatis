@@ -44,9 +44,16 @@ interface DeviceDurationResponse {
 const DEVICE_MODEL_OPTIONS = ['PFDM MR', 'YVR 2', 'YVR 1'];
 
 type DurationMode = 'cumulative' | 'average';
+type ActiveMode = 'activity' | 'rate';
+
+interface ActiveRateData {
+  activeDate: string;
+  activeRate: number;
+}
 
 const DeviceStatsPage: React.FC = () => {
   const [activeStats, setActiveStats] = useState<ApiStatData[]>([]);
+  const [activeRateStats, setActiveRateStats] = useState<ActiveRateData[]>([]);
   const [totalStats, setTotalStats] = useState<ApiStatData[]>([]);
   const [durationStats, setDurationStats] = useState<DeviceDurationStat[]>([]);
   const [activeLoading, setActiveLoading] = useState<boolean>(false);
@@ -63,11 +70,83 @@ const DeviceStatsPage: React.FC = () => {
   const [durationPoint, setDurationPoint] = useState<number>(0);
   const [durationType, setDurationType] = useState<number>(1);
   const [durationMode, setDurationMode] = useState<DurationMode>('cumulative');
+  const [activeMode, setActiveMode] = useState<ActiveMode>('activity');
   const navigate = useNavigate();
   const durationTitle = durationMode === 'average' ? '设备平均使用时长统计' : '设备累计使用时长统计';
   const durationToggleText = durationMode === 'average' ? '切换-累计使用时长' : '切换-平均使用时长';
   const durationLineName = durationMode === 'average' ? '平均使用时长（小时）' : '使用时长（小时）';
   const durationTooltipLabel = durationMode === 'average' ? '平均使用时长' : '使用时长';
+  const activeTitle = activeMode === 'rate' ? '设备活跃率统计' : '设备活跃度统计';
+  const activeToggleText = activeMode === 'rate' ? '切换-活跃度' : '切换-活跃率';
+
+  // 补全累计激活量数据（往前追溯）
+  const fillCumulativeData = (distributiveData: ApiStatData[], cumulativeData: ApiStatData[]): ApiStatData[] => {
+    // 创建累计数据的日期映射
+    const cumulativeMap = new Map<string, number>();
+    cumulativeData.forEach(item => {
+      cumulativeMap.set(item.activeDate, item.activeCount);
+    });
+
+    // 按日期排序累计数据（从早到晚）
+    const sortedCumulative = [...cumulativeData].sort((a, b) => 
+      new Date(a.activeDate).getTime() - new Date(b.activeDate).getTime()
+    );
+
+    // 为每个活跃度日期补全累计数据
+    const filledData: ApiStatData[] = [];
+    distributiveData.forEach(item => {
+      const date = item.activeDate;
+      const dateTime = new Date(date).getTime();
+      
+      if (cumulativeMap.has(date)) {
+        // 如果累计数据中有该日期，直接使用
+        filledData.push({
+          activeDate: date,
+          activeCount: cumulativeMap.get(date)!
+        });
+      } else {
+        // 如果没有，往前追溯找到最近的一个小于等于当前日期的累计值
+        let found = false;
+        let lastCumulativeValue = 0;
+        
+        // 从后往前遍历，找到最后一个小于等于当前日期的累计值
+        for (let i = sortedCumulative.length - 1; i >= 0; i--) {
+          const cumDate = sortedCumulative[i].activeDate;
+          const cumDateTime = new Date(cumDate).getTime();
+          
+          if (cumDateTime <= dateTime) {
+            lastCumulativeValue = sortedCumulative[i].activeCount;
+            found = true;
+            break;
+          }
+        }
+        
+        filledData.push({
+          activeDate: date,
+          activeCount: found ? lastCumulativeValue : 0
+        });
+      }
+    });
+
+    return filledData;
+  };
+
+  // 计算活跃率数据
+  const calculateActiveRate = (distributiveData: ApiStatData[], cumulativeData: ApiStatData[]): ActiveRateData[] => {
+    const filledCumulative = fillCumulativeData(distributiveData, cumulativeData);
+    const rateData: ActiveRateData[] = [];
+
+    distributiveData.forEach((item, index) => {
+      const cumulativeCount = filledCumulative[index]?.activeCount || 0;
+      const rate = cumulativeCount > 0 ? (item.activeCount / cumulativeCount) * 100 : 0;
+      rateData.push({
+        activeDate: item.activeDate,
+        activeRate: Number(rate.toFixed(2))
+      });
+    });
+
+    return rateData;
+  };
 
   // 获取设备活跃度数据
   const fetchActiveData = useCallback(async () => {
@@ -79,23 +158,49 @@ const DeviceStatsPage: React.FC = () => {
         type: activeType
       };
       
-      const activeResponse = await axios.post<DeviceAtvResponse>(API.DEVICE_ACTIVITY, activeParams, getAxiosConfig());
+      if (activeMode === 'activity') {
+        // 活跃度模式：只调用活跃度接口
+        const activeResponse = await axios.post<DeviceAtvResponse>(API.DEVICE_ACTIVITY, activeParams, getAxiosConfig());
 
-      // 处理设备活跃度数据
-      if (activeResponse.data.errCode === 0 && activeResponse.data.data?.atvs) {
-        setActiveStats(activeResponse.data.data.atvs);
+        // 处理设备活跃度数据
+        if (activeResponse.data.errCode === 0 && activeResponse.data.data?.atvs) {
+          setActiveStats(activeResponse.data.data.atvs);
+        } else {
+          message.error('获取设备活跃度数据失败');
+          setActiveStats([]);
+        }
       } else {
-        message.error('获取设备活跃度数据失败');
-        setActiveStats([]);
+        // 活跃率模式：同时调用两个接口
+        const [activeResponse, cumulativeResponse] = await Promise.all([
+          axios.post<DeviceAtvResponse>(API.DEVICE_ACTIVITY, activeParams, getAxiosConfig()),
+          axios.post<DeviceAtvResponse>(API.DEVICE_TOTAL, activeParams, getAxiosConfig())
+        ]);
+
+        if (activeResponse.data.errCode === 0 && activeResponse.data.data?.atvs &&
+            cumulativeResponse.data.errCode === 0 && cumulativeResponse.data.data?.atvs) {
+          // 计算活跃率
+          const rateData = calculateActiveRate(
+            activeResponse.data.data.atvs,
+            cumulativeResponse.data.data.atvs
+          );
+          setActiveRateStats(rateData);
+        } else {
+          message.error('获取设备活跃率数据失败');
+          setActiveRateStats([]);
+        }
       }
     } catch (error) {
       console.error('获取设备活跃度数据失败:', error);
       message.error('获取设备活跃度数据失败，请重试');
-      setActiveStats([]);
+      if (activeMode === 'activity') {
+        setActiveStats([]);
+      } else {
+        setActiveRateStats([]);
+      }
     } finally {
       setActiveLoading(false);
     }
-  }, [activePoint, activeType, activeModel]);
+  }, [activePoint, activeType, activeModel, activeMode]);
 
   // 获取设备累计激活量数据
   const fetchTotalData = useCallback(async () => {
@@ -182,6 +287,19 @@ const DeviceStatsPage: React.FC = () => {
 
   const handleDurationModeToggle = () => {
     setDurationMode((prev) => (prev === 'cumulative' ? 'average' : 'cumulative'));
+  };
+
+  const handleActiveModeToggle = () => {
+    setActiveMode((prev) => {
+      const newMode = prev === 'activity' ? 'rate' : 'activity';
+      // 切换模式时清空旧数据
+      if (newMode === 'activity') {
+        setActiveRateStats([]);
+      } else {
+        setActiveStats([]);
+      }
+      return newMode;
+    });
   };
 
   // 退出登录
@@ -292,7 +410,15 @@ const DeviceStatsPage: React.FC = () => {
           </Card>
 
           {/* 设备活跃度统计 */}
-          <Card className="stats-card" title="设备活跃度统计">
+          <Card 
+            className="stats-card" 
+            title={activeTitle}
+            extra={
+              <Button type="link" onClick={handleActiveModeToggle}>
+                {activeToggleText}
+              </Button>
+            }
+          >
             <div className="chart-filter-controls">
               <div className="filter-item">
                 <Text strong>设备类型：</Text>
@@ -346,28 +472,54 @@ const DeviceStatsPage: React.FC = () => {
               <div className="loading-container">
                 <Spin size="large" />
               </div>
-            ) : activeStats.length > 0 ? (
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart
-                  data={activeStats}
-                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="activeDate" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="activeCount" 
-                    name="活跃设备数" 
-                    stroke="#8884d8" 
-                    activeDot={{ r: 8 }} 
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            ) : activeMode === 'activity' ? (
+              activeStats.length > 0 ? (
+                <ResponsiveContainer width="100%" height={400}>
+                  <LineChart
+                    data={activeStats}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="activeDate" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="activeCount" 
+                      name="活跃设备数" 
+                      stroke="#8884d8" 
+                      activeDot={{ r: 8 }} 
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty description="暂无数据" />
+              )
             ) : (
-              <Empty description="暂无数据" />
+              activeRateStats.length > 0 ? (
+                <ResponsiveContainer width="100%" height={400}>
+                  <LineChart
+                    data={activeRateStats}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="activeDate" />
+                    <YAxis unit="%" />
+                    <Tooltip formatter={(value: number) => [`${value}%`, '活跃率']} />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="activeRate" 
+                      name="活跃率（%）" 
+                      stroke="#8884d8" 
+                      activeDot={{ r: 8 }} 
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty description="暂无数据" />
+              )
             )}
           </Card>
 
