@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Typography, Card, Button, message, Spin, Empty, Select } from 'antd';
+import { Layout, Typography, Card, Button, message, Spin, Empty, Select, Tabs, DatePicker, Table } from 'antd';
 import { LogoutOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import dayjs, { Dayjs } from 'dayjs';
 import { API, getAxiosConfig } from '../config/api';
 import { getFullPath } from '../config/constants';
 import '../styles/DeviceStatsPage.css';
@@ -13,6 +14,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { RangePicker } = DatePicker;
 
 // 数据类型定义
 interface ApiStatData {
@@ -38,6 +40,23 @@ interface DeviceDurationResponse {
   errMsg: string;
   data: {
     durs: DeviceDurationStat[];
+  };
+}
+
+interface AppUsageStat {
+  name: string;
+  pkg: string;
+  totalDura: number;
+  averageDura: number;
+  deviceCount: number;
+  bootCount: number;
+}
+
+interface AppUsageResponse {
+  errCode: number;
+  errMsg: string;
+  data: {
+    durs: AppUsageStat[];
   };
 }
 
@@ -71,6 +90,16 @@ const DeviceStatsPage: React.FC = () => {
   const [durationType, setDurationType] = useState<number>(1);
   const [durationMode, setDurationMode] = useState<DurationMode>('cumulative');
   const [activeMode, setActiveMode] = useState<ActiveMode>('activity');
+  const [activeTab, setActiveTab] = useState<'basic' | 'app'>('basic');
+  // 应用使用统计相关状态
+  const [appUsageStats, setAppUsageStats] = useState<AppUsageStat[]>([]);
+  const [appUsageLoading, setAppUsageLoading] = useState<boolean>(false);
+  const [appUsageModel, setAppUsageModel] = useState<string>('PFDM MR');
+  const [appUsagePoint, setAppUsagePoint] = useState<number>(0);
+  const [appDateRange, setAppDateRange] = useState<[Dayjs, Dayjs]>([
+    dayjs().subtract(6, 'month'),
+    dayjs()
+  ]);
   const navigate = useNavigate();
   const durationTitle = durationMode === 'average' ? '设备平均使用时长统计' : '设备累计使用时长统计';
   const durationToggleText = durationMode === 'average' ? '切换-累计使用时长' : '切换-平均使用时长';
@@ -232,12 +261,16 @@ const DeviceStatsPage: React.FC = () => {
 
   // 按当前筛选条件获取数据
   useEffect(() => {
-    fetchActiveData();
-  }, [fetchActiveData]);
+    if (activeTab === 'basic') {
+      fetchActiveData();
+    }
+  }, [fetchActiveData, activeTab]);
   
   useEffect(() => {
-    fetchTotalData();
-  }, [fetchTotalData]);
+    if (activeTab === 'basic') {
+      fetchTotalData();
+    }
+  }, [fetchTotalData, activeTab]);
 
   // 获取设备使用时长数据
   const fetchDurationData = useCallback(async () => {
@@ -267,9 +300,45 @@ const DeviceStatsPage: React.FC = () => {
     }
   }, [durationModel, durationPoint, durationType, durationMode]);
 
+  // 获取应用使用统计数据
+  const fetchAppUsageData = useCallback(async () => {
+    setAppUsageLoading(true);
+    try {
+      const params = {
+        model: appUsageModel,
+        point: appUsagePoint,
+        fromDate: appDateRange[0].format('YYYY-MM-DD'),
+        toDate: appDateRange[1].format('YYYY-MM-DD')
+      };
+      
+      const response = await axios.post<AppUsageResponse>(API.APP_COMPOSITE_DUR, params, getAxiosConfig());
+
+      if (response.data.errCode === 0 && response.data.data?.durs) {
+        setAppUsageStats(response.data.data.durs);
+      } else {
+        message.error('获取应用使用统计数据失败');
+        setAppUsageStats([]);
+      }
+    } catch (error) {
+      console.error('获取应用使用统计数据失败:', error);
+      message.error('获取应用使用统计数据失败，请重试');
+      setAppUsageStats([]);
+    } finally {
+      setAppUsageLoading(false);
+    }
+  }, [appUsageModel, appUsagePoint, appDateRange]);
+
   useEffect(() => {
-    fetchDurationData();
-  }, [fetchDurationData]);
+    if (activeTab === 'basic') {
+      fetchDurationData();
+    }
+  }, [fetchDurationData, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'app') {
+      fetchAppUsageData();
+    }
+  }, [fetchAppUsageData, activeTab]);
   
   // 手动刷新设备活跃度数据
   const handleActiveRefresh = () => {
@@ -302,6 +371,53 @@ const DeviceStatsPage: React.FC = () => {
     });
   };
 
+  // 手动刷新应用使用数据
+  const handleAppUsageRefresh = () => {
+    fetchAppUsageData();
+  };
+
+  // 应用使用统计表格列定义
+  const appUsageColumns = [
+    {
+      title: '#',
+      key: 'index',
+      width: 60,
+      render: (_: any, __: any, index: number) => index + 1,
+    },
+    {
+      title: '应用名称',
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: '包名',
+      dataIndex: 'pkg',
+      key: 'pkg',
+    },
+    {
+      title: '使用时长（h）',
+      dataIndex: 'totalDura',
+      key: 'totalDura',
+      render: (value: number) => value.toFixed(2),
+    },
+    {
+      title: '使用设备数（台）',
+      dataIndex: 'deviceCount',
+      key: 'deviceCount',
+    },
+    {
+      title: '平均使用时长（h）',
+      dataIndex: 'averageDura',
+      key: 'averageDura',
+      render: (value: number) => value.toFixed(2),
+    },
+    {
+      title: '开启次数',
+      dataIndex: 'bootCount',
+      key: 'bootCount',
+    },
+  ];
+
   // 退出登录
   const handleLogout = () => {
     sessionStorage.removeItem('token');
@@ -327,9 +443,18 @@ const DeviceStatsPage: React.FC = () => {
         </div>
       </Header>
       <Content className="stats-content">
-        <div className="stats-cards">
-          {/* 设备累计激活量统计 - 放在上面 */}
-          <Card className="stats-card" title="设备累计激活量统计">
+        <Tabs 
+          defaultActiveKey="basic" 
+          className="stats-tabs"
+          onChange={(key) => setActiveTab(key as 'basic' | 'app')}
+          items={[
+            {
+              key: 'basic',
+              label: '基础看板',
+              children: (
+                <div className="stats-cards">
+                  {/* 设备累计激活量统计 - 放在上面 */}
+                  <Card className="stats-card" title="设备累计激活量统计">
             <div className="chart-filter-controls">
               <div className="filter-item">
                 <Text strong>设备类型：</Text>
@@ -610,7 +735,90 @@ const DeviceStatsPage: React.FC = () => {
               <Empty description="暂无数据" />
             )}
           </Card>
-        </div>
+                </div>
+              )
+            },
+            {
+              key: 'app',
+              label: '应用使用',
+              children: (
+                <div className="stats-cards">
+                  <Card className="stats-card" title="应用使用统计">
+                    <div className="chart-filter-controls">
+                      <div className="filter-item">
+                        <Text strong>设备类型：</Text>
+                        <Select
+                          value={appUsageModel}
+                          style={{ width: 160, marginLeft: 10 }}
+                          onChange={(value) => setAppUsageModel(value)}
+                        >
+                          {DEVICE_MODEL_OPTIONS.map((option) => (
+                            <Option key={option} value={option}>
+                              {option}
+                            </Option>
+                          ))}
+                        </Select>
+                      </div>
+                      <div className="filter-item">
+                        <Text strong>数据类型：</Text>
+                        <Select 
+                          value={appUsagePoint}
+                          style={{ width: 120, marginLeft: 10 }}
+                          onChange={(value) => setAppUsagePoint(value)}
+                        >
+                          <Option value={0}>全部</Option>
+                          <Option value={1}>C端</Option>
+                          <Option value={2}>B端</Option>
+                        </Select>
+                      </div>
+                      <div className="filter-item">
+                        <Text strong>统计范围：</Text>
+                        <RangePicker
+                          value={appDateRange}
+                          onChange={(dates) => {
+                            if (dates && dates[0] && dates[1]) {
+                              setAppDateRange([dates[0], dates[1]]);
+                            }
+                          }}
+                          format="YYYY-MM-DD"
+                          style={{ marginLeft: 10 }}
+                        />
+                      </div>
+                      <Button 
+                        type="primary" 
+                        icon={<ReloadOutlined />} 
+                        onClick={handleAppUsageRefresh}
+                        loading={appUsageLoading}
+                        style={{ marginLeft: 10 }}
+                      >
+                        刷新
+                      </Button>
+                    </div>
+                    {appUsageLoading ? (
+                      <div className="loading-container">
+                        <Spin size="large" />
+                      </div>
+                    ) : appUsageStats.length > 0 ? (
+                      <Table
+                        columns={appUsageColumns}
+                        dataSource={appUsageStats}
+                        rowKey="pkg"
+                        pagination={{
+                          pageSize: 10,
+                          showSizeChanger: true,
+                          showTotal: (total) => `共 ${total} 条数据`,
+                        }}
+                        scroll={{ x: 'max-content' }}
+                      />
+                    ) : (
+                      <Empty description="暂无数据" />
+                    )}
+                  </Card>
+                </div>
+              )
+            }
+          ]}
+        />
       </Content>
     </Layout>
   );

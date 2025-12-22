@@ -80,7 +80,9 @@ export const API = {
   // 设备使用时长统计接口
   DEVICE_DURATION: `${API_BASE_URL}/vrmcsys/datacenter/getDeviceCumulativeDur`,
   // 设备平均使用时长统计接口
-  DEVICE_DURATION_AVG: `${API_BASE_URL}/vrmcsys/datacenter/getDeviceAverageDur`
+  DEVICE_DURATION_AVG: `${API_BASE_URL}/vrmcsys/datacenter/getDeviceAverageDur`,
+  // 应用使用统计接口
+  APP_COMPOSITE_DUR: `${API_BASE_URL}/vrmcsys/datacenter/getAppCompositeDur`
 };
 
 // 导出axios配置函数，方便统一处理请求头、错误处理等
