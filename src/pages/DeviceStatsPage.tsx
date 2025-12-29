@@ -100,6 +100,10 @@ const DeviceStatsPage: React.FC = () => {
     dayjs().subtract(6, 'month'),
     dayjs()
   ]);
+  const [appPagination, setAppPagination] = useState<{ current: number; pageSize: number }>({
+    current: 1,
+    pageSize: 10
+  });
   const navigate = useNavigate();
   const durationTitle = durationMode === 'average' ? '设备平均使用时长统计' : '设备累计使用时长统计';
   const durationToggleText = durationMode === 'average' ? '切换-累计使用时长' : '切换-平均使用时长';
@@ -315,6 +319,8 @@ const DeviceStatsPage: React.FC = () => {
 
       if (response.data.errCode === 0 && response.data.data?.durs) {
         setAppUsageStats(response.data.data.durs);
+        // 新数据从第一页开始查看
+        setAppPagination((prev) => ({ ...prev, current: 1 }));
       } else {
         message.error('获取应用使用统计数据失败');
         setAppUsageStats([]);
@@ -382,7 +388,8 @@ const DeviceStatsPage: React.FC = () => {
       title: '#',
       key: 'index',
       width: 60,
-      render: (_: any, __: any, index: number) => index + 1,
+      render: (_: any, __: any, index: number) =>
+        index + 1 + (appPagination.current - 1) * appPagination.pageSize,
     },
     {
       title: '应用名称',
@@ -804,9 +811,16 @@ const DeviceStatsPage: React.FC = () => {
                         dataSource={appUsageStats}
                         rowKey="pkg"
                         pagination={{
-                          pageSize: 10,
+                          current: appPagination.current,
+                          pageSize: appPagination.pageSize,
                           showSizeChanger: true,
                           showTotal: (total) => `共 ${total} 条数据`,
+                          onChange: (page, pageSize) => {
+                            setAppPagination({ current: page, pageSize });
+                          },
+                          onShowSizeChange: (_current, size) => {
+                            setAppPagination({ current: 1, pageSize: size });
+                          },
                         }}
                         scroll={{ x: 'max-content' }}
                       />
